@@ -95,7 +95,9 @@ def where_to_split(mini_batch_size, ndevices, _add_leftover=False):
 
 ### define dlrm in Caffe2 ###
 class DLRM_Net(object):
+
     def FeedBlobWrapper(self, tag, val, add_prefix=True, split=False, device_id=-1):
+        start_time = time.time()
         if self.ndevices > 1 and add_prefix:
             if split:
                 # split across devices
@@ -139,8 +141,10 @@ class DLRM_Net(object):
                 workspace.FeedBlob(tag, val, device_option=_d)
             else:
                 workspace.FeedBlob(tag, val)
+        print('Completed FeedBlobWrapper() in %s seconds' % (time.time() - start_time))
 
     def FetchBlobWrapper(self, tag, add_prefix=True, reduce_across=None, device_id=-1):
+        start_time = time.time()
         if self.ndevices > 1 and add_prefix:
             # fetch from multiple devices
             vals = []
@@ -153,21 +157,27 @@ class DLRM_Net(object):
                 vals.append(val)
             # reduce across devices
             if reduce_across == "add":
+                print('Completed FetchBlobWrapper() in %s seconds' % (time.time() - start_time))
                 return functools.reduce(operator.add, vals)
             elif reduce_across == "concat":
+                print('Completed FetchBlobWrapper() in %s seconds' % (time.time() - start_time))
                 return np.concatenate(vals)
             else:
+                print('Completed FetchBlobWrapper() in %s seconds' % (time.time() - start_time))
                 return vals
         else:
             # fetch from a single device (named or not)
             if device_id >= 0:
                 tag_on_device = "gpu_" + str(device_id) + "/" + tag
+                print('Completed FetchBlobWrapper() in %s seconds' % (time.time() - start_time))
                 return workspace.FetchBlob(tag_on_device)
             else:
+                print('Completed FetchBlobWrapper() in %s seconds' % (time.time() - start_time))
                 return workspace.FetchBlob(tag)
 
     def AddLayerWrapper(self, layer, inp_blobs, out_blobs,
                         add_prefix=True, reset_grad=False, **kwargs):
+        start_time = time.time()
         # auxiliary routine to adjust tags
         def adjust_tag(blobs, on_device):
             if blobs.__class__ == str:
@@ -198,6 +208,7 @@ class DLRM_Net(object):
                     else:
                         new_layer = layer(_inp_blobs, _out_blobs)
                 ll.append(new_layer)
+            print('Completed AddLayerWrapper() in %s seconds' % (time.time() - start_time))
             return ll
         else:
             # add layer on a single device
@@ -211,9 +222,11 @@ class DLRM_Net(object):
                 new_layer = layer(inp_blobs, out_blobs, **kwargs)
             else:
                 new_layer = layer(inp_blobs, out_blobs)
+            print('Completed AddLayerWrapper() in %s seconds' % (time.time() - start_time))
             return new_layer
 
     def create_mlp(self, ln, sigmoid_layer, model, tag):
+        start_time = time.time()
         (tag_layer, tag_in, tag_out) = tag
 
         # build MLP layer by layer
@@ -287,9 +300,11 @@ class DLRM_Net(object):
         # WARNING: the dependency between layers is implicit in the tags,
         # so only the last layer is added to the layers list. It will
         # later be used for interactions.
+        print('Completed create_mlp() in %s seconds' % (time.time() - start_time))
         return layers, weights
 
     def create_emb(self, m, ln, model, tag):
+        start_time = time.time()
         (tag_layer, tag_in, tag_out) = tag
         emb_l = []
         weights_l = []
@@ -332,10 +347,11 @@ class DLRM_Net(object):
                 with core.DeviceScope(core.DeviceOption(workspace.GpuDeviceType, d)):
                     EE = model.net.SparseLengthsSum([tbl_s, ind_s, len_s], [sum_s])
             emb_l.append(EE)
-
+        print('Completed create_emb() in %s seconds' % (time.time() - start_time))
         return emb_l, weights_l
 
     def create_interactions(self, x, ly, model, tag):
+        start_time = time.time()
         (tag_dense_in, tag_sparse_in, tag_int_out) = tag
 
         if self.arch_interaction_op == "dot":
@@ -370,10 +386,11 @@ class DLRM_Net(object):
         else:
             sys.exit("ERROR: --arch-interaction-op="
                      + self.arch_interaction_op + " is not supported")
-
+        print('Completed create_interactions() in %s seconds' % (time.time() - start_time))
         return R
 
     def create_sequential_forward_ops(self):
+        start_time = time.time()
         # embeddings
         tag = (self.temb, self.tsin, self.tsout)
         self.emb_l, self.emb_w = self.create_emb(self.m_spa, self.ln_emb,
@@ -397,8 +414,10 @@ class DLRM_Net(object):
 
         # setup the last output variable
         self.last_output = self.top_l[-1]
+        print('Completed create_sequential_forward_ops() in %s seconds' % (time.time() - start_time))
 
     def create_parallel_forward_ops(self):
+        start_time = time.time()
         # distribute embeddings (model parallelism)
         tag = (self.temb, self.tsin, self.tsout)
         self.emb_l, self.emb_w = self.create_emb(self.m_spa, self.ln_emb,
@@ -464,6 +483,7 @@ class DLRM_Net(object):
 
         # setup the last output variable
         self.last_output = self.top_l[-1]
+        print('Completed create_parallel_forward_ops() in %s seconds' % (time.time() - start_time))
 
     def __init__(
         self,
@@ -568,6 +588,7 @@ class DLRM_Net(object):
         self.create_model(X, S_lengths, S_indices, T)
 
     def create_input(self, X, S_lengths, S_indices, T):
+        start_time = time.time()
         # feed input data to blobs
         self.FeedBlobWrapper(self.tdin, X, split=True)
         # save the blob shapes for latter (only needed if onnx is requested)
@@ -600,8 +621,10 @@ class DLRM_Net(object):
             # save the blob shapes for latter (only needed if onnx is requested)
             if self.save_onnx:
                 self.onnx_tsd[self.ttar] = (onnx.TensorProto.FLOAT, T.shape)
+        print('Completed create_input() in %s seconds' % (time.time() - start_time))
 
     def create_model(self, X, S_lengths, S_indices, T):
+        start_time = time.time()
         #setup tril indices for the interactions
         offset = 1 if self.arch_interaction_itself else 0
         num_fea = len(self.emb_l) + 1
@@ -620,8 +643,10 @@ class DLRM_Net(object):
             workspace.CreateNet(self.model.net)
             if self.test_net is not None:
                 workspace.CreateNet(self.test_net)
+        print('Completed create_model() in %s seconds' % (time.time() - start_time))
 
     def run(self, X, S_lengths, S_indices, T, test_net=False, enable_prof=False):
+        start_time = time.time()
         # feed input data to blobs
         # dense features
         self.FeedBlobWrapper(self.tdin, X, split=True)
@@ -656,15 +681,19 @@ class DLRM_Net(object):
         # for tag_emb in self.emb_l:
         #     print(self.FetchBlobWrapper(tag_emb))
         # print(self.FetchBlobWrapper(self.tint))
+        print('Completed run() in %s seconds' % (time.time() - start_time))
 
     def MSEloss(self, scale=1.0):
+        start_time = time.time()
         # add MSEloss to the model
         self.AddLayerWrapper(self.model.SquaredL2Distance, [self.tout, self.ttar], "sd")
         self.AddLayerWrapper(self.model.Scale, "sd", "sd2", scale=2.0 * scale)
         # WARNING: "loss" is a special tag and should not be changed
         self.loss = self.AddLayerWrapper(self.model.AveragedLoss, "sd2", "loss")
+        print('Completed MSEloss() in %s seconds' % (time.time() - start_time))
 
     def BCEloss(self, scale=1.0, threshold=0.0):
+        start_time = time.time()
         # add BCEloss to the mode
         if 0.0 < threshold and threshold < 1.0:
             self.AddLayerWrapper(self.model.Clip, self.tout, "tout_c",
@@ -679,9 +708,11 @@ class DLRM_Net(object):
         else:
             self.AddLayerWrapper(self.model.Scale, "sd", "sd2", scale=scale)
             self.loss = self.AddLayerWrapper(self.model.AveragedLoss, "sd2", "loss")
+        print('Completed BCEloss() in %s seconds' % (time.time() - start_time))
 
     def sgd_optimizer(self, learning_rate,
                       T=None, _gradientMap=None, sync_dense_params=True):
+        start_time = time.time()
         # create one, it and lr tags (or use them if already present)
         if T is not None:
             (tag_one, tag_it, tag_lr) = T
@@ -761,8 +792,10 @@ class DLRM_Net(object):
             else:
                 self.model.ScatterWeightedSum([w, _tag_one, w_grad.indices,
                                                w_grad.values, _tag_lr], w)
+        print('Completed sgd_optimizer() in %s seconds' % (time.time() - start_time))
 
     def print_all(self):
+        start_time = time.time()
         # approach 1: all
         print(workspace.Blobs(), end='\n')
         for _, l in enumerate(workspace.Blobs()):
@@ -772,8 +805,10 @@ class DLRM_Net(object):
         # for param in self.model.params:
         #    self.model.Summarize(param, [], to_file=1)
         #    self.model.Summarize(self.model.param_to_grad[param], [], to_file=1)
+        print('Completed print_all() in %s seconds' % (time.time() - start_time))
 
     def print_weights(self):
+        start_time = time.time()
         for _, l in enumerate(self.emb_w):
             # print(l)
             print(self.FetchBlobWrapper(l, False))
@@ -789,8 +824,10 @@ class DLRM_Net(object):
                 print(self.FetchBlobWrapper(l, False, device_id=0))
             else:
                 print(self.FetchBlobWrapper(l))
+        print('Completed print_weights() in %s seconds' % (time.time() - start_time))
 
     def print_activations(self):
+        start_time = time.time()
         for _, l in enumerate(self.emb_l):
             print(l)
             print(self.FetchBlobWrapper(l, False))
@@ -802,9 +839,11 @@ class DLRM_Net(object):
         for _, l in enumerate(self.top_l):
             print(l)
             print(self.FetchBlobWrapper(l))
+        print('Completed print_activations() in %s seconds' % (time.time() - start_time))
 
 
 def define_metrics():
+    start_time = time.time()
     metrics = {
         'loss': lambda y_true, y_score:
         sklearn.metrics.log_loss(
@@ -836,10 +875,12 @@ def define_metrics():
         # 'pre_curve' : sklearn.metrics.precision_recall_curve,
         # 'roc_curve' :  sklearn.metrics.roc_curve,
     }
+    print('Completed define_metrics() in %s seconds' % (time.time() - start_time))
     return metrics
 
 
 def calculate_metrics(targets, scores):
+    start_time = time.time()
     scores = np.concatenate(scores, axis=0)
     targets = np.concatenate(targets, axis=0)
 
@@ -867,6 +908,7 @@ def calculate_metrics(targets, scores):
         # print("{} {:.4f}".format(metric_name, 1000 * (met_time)),
         #      end="")
     # print(" ms")
+    print('Completed calculate_metrics() in %s seconds' % (time.time() - start_time))
     return validation_results
 
 if __name__ == "__main__":
