@@ -108,6 +108,7 @@ class LRPolicyScheduler(_LRScheduler):
         super(LRPolicyScheduler, self).__init__(optimizer)
 
     def get_lr(self):
+        start_time = time.time()
         step_count = self._step_count
         if step_count < self.num_warmup_steps:
             # warmup
@@ -129,11 +130,13 @@ class LRPolicyScheduler(_LRScheduler):
             else:
                 # do not adjust
                 lr = self.base_lrs
+        print('Completed get_lr() in %s seconds' % (time.time() - start_time))
         return lr
 
 ### define dlrm in PyTorch ###
 class DLRM_Net(nn.Module):
     def create_mlp(self, ln, sigmoid_layer):
+        start_time = time.time()
         # build MLP layer by layer
         layers = nn.ModuleList()
         for i in range(0, ln.size - 1):
@@ -171,9 +174,11 @@ class DLRM_Net(nn.Module):
         # approach 1: use ModuleList
         # return layers
         # approach 2: use Sequential container to wrap all layers
+        print('Completed create_mlp() in %s seconds' % (time.time() - start_time))
         return torch.nn.Sequential(*layers)
 
     def create_emb(self, m, ln):
+        start_time = time.time()
         emb_l = nn.ModuleList()
         for i in range(0, ln.size):
             n = ln[i]
@@ -207,7 +212,7 @@ class DLRM_Net(nn.Module):
                 # EE.weight = Parameter(torch.tensor(W),requires_grad=True)
 
             emb_l.append(EE)
-
+        print('Completed create_emb() in %s seconds' % (time.time() - start_time))
         return emb_l
 
     def __init__(
@@ -266,14 +271,17 @@ class DLRM_Net(nn.Module):
             self.top_l = self.create_mlp(ln_top, sigmoid_top)
 
     def apply_mlp(self, x, layers):
+        start_time = time.time()
         # approach 1: use ModuleList
         # for layer in layers:
         #     x = layer(x)
         # return x
         # approach 2: use Sequential container to wrap all layers
+        print('Completed apply_mlp() in %s seconds' % (time.time() - start_time))
         return layers(x)
 
     def apply_emb(self, lS_o, lS_i, emb_l):
+        start_time = time.time()
         # WARNING: notice that we are processing the batch at once. We implicitly
         # assume that the data is laid out such that:
         # 1. each embedding is indexed with a group of sparse indices,
@@ -297,9 +305,11 @@ class DLRM_Net(nn.Module):
             ly.append(V)
 
         # print(ly)
+        print('Completed apply_emb() in %s seconds' % (time.time() - start_time))
         return ly
 
     def interact_features(self, x, ly):
+        start_time = time.time()
         if self.arch_interaction_op == "dot":
             # concatenate dense and sparse features
             (batch_size, d) = x.shape
@@ -330,16 +340,20 @@ class DLRM_Net(nn.Module):
                 + self.arch_interaction_op
                 + " is not supported"
             )
-
+        print('Completed interact_features() in %s seconds' % (time.time() - start_time))
         return R
 
     def forward(self, dense_x, lS_o, lS_i):
+        start_time = time.time()
         if self.ndevices <= 1:
+            print('Completed forward() in %s seconds' % (time.time() - start_time))
             return self.sequential_forward(dense_x, lS_o, lS_i)
         else:
+            print('Completed forward() in %s seconds' % (time.time() - start_time))
             return self.parallel_forward(dense_x, lS_o, lS_i)
 
     def sequential_forward(self, dense_x, lS_o, lS_i):
+        start_time = time.time()
         # process dense features (using bottom mlp), resulting in a row vector
         x = self.apply_mlp(dense_x, self.bot_l)
         # debug prints
@@ -363,10 +377,11 @@ class DLRM_Net(nn.Module):
             z = torch.clamp(p, min=self.loss_threshold, max=(1.0 - self.loss_threshold))
         else:
             z = p
-
+        print('Completed sequential_forward() in %s seconds' % (time.time() - start_time))
         return z
 
     def parallel_forward(self, dense_x, lS_o, lS_i):
+        start_time = time.time()
         ### prepare model (overwrite) ###
         # WARNING: # of devices must be >= batch size in parallel_forward call
         batch_size = dense_x.size()[0]
@@ -471,11 +486,12 @@ class DLRM_Net(nn.Module):
             )
         else:
             z0 = p0
-
+        print('Completed parallel_forward() in %s seconds' % (time.time() - start_time))
         return z0
 
 
 def dash_separated_ints(value):
+    start_time = time.time()
     vals = value.split('-')
     for val in vals:
         try:
@@ -483,11 +499,12 @@ def dash_separated_ints(value):
         except ValueError:
             raise argparse.ArgumentTypeError(
                 "%s is not a valid dash separated list of ints" % value)
-
+    print('Completed dash_separated_ints() in %s seconds' % (time.time() - start_time))
     return value
 
 
 def dash_separated_floats(value):
+    start_time = time.time()
     vals = value.split('-')
     for val in vals:
         try:
@@ -495,7 +512,7 @@ def dash_separated_floats(value):
         except ValueError:
             raise argparse.ArgumentTypeError(
                 "%s is not a valid dash separated list of floats" % value)
-
+    print('Completed dash_separated_floats() in %s seconds' % (time.time() - start_time))
     return value
 
 
